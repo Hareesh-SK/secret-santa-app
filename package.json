@@ -1,0 +1,12 @@
+{
+  "name": "secret-santa-project",
+  "version": "1.0.0",
+  "description": "Automated Secret Santa Assignment",
+  "main": "secret-santa.js",
+  "scripts": {
+    "start": "node secret-santa.js"
+  },
+  "dependencies": {
+    "csv-parser": "^3.0.0"
+  }
+}
