@@ -1,99 +1,73 @@
-const fs = require('fs');
-const csv = require('csv-parser');
+const fs = require("fs");
+const path = require("path");
+const csv = require("csv-parser");
 
-// File paths for employee list and last year's results
-const employeeFile = './Employee-List.csv';
-const lastYearFile = './Secret-Santa-Game-Result-2023.csv';
-
-// Read employee data from CSV
 function readCSV(filePath) {
-  return new Promise((resolve, reject) => {
-    const results = [];
-    fs.createReadStream(filePath)
-      .pipe(csv())
-      .on('data', (data) => results.push(data))
-      .on('end', () => resolve(results))
-      .on('error', (error) => reject(error));
-  });
+    return new Promise((resolve, reject) => {
+        if (!fs.existsSync(filePath)) {
+            return reject(new Error(`File not found: ${filePath}`));
+        }
+
+        const results = [];
+        fs.createReadStream(filePath)
+            .pipe(csv())
+            .on("data", (data) => results.push(data))
+            .on("end", () => resolve(results))
+            .on("error", (error) => reject(error));
+    });
 }
 
-// Secret Santa assignment logic
-async function assignSecretSantas() {
-  try {
-    // Read employee list and previous year's assignments
-    const employees = await readCSV(employeeFile);
-    const lastYearAssignments = await readCSV(lastYearFile);
 
-    // Map to track last year's Secret Santa pairs for comparison
-    const lastYearMap = new Map();
-    lastYearAssignments.forEach((entry) => {
-      lastYearMap.set(entry.Employee_EmailID, entry.Secret_Child_EmailID);
-    });
+function writeCSV(filePath, data) {
+    const headers = Object.keys(data[0]);
+    const csvContent = [headers.join(","), ...data.map((row) => headers.map((h) => row[h]).join(","))].join("\n");
+    fs.writeFileSync(filePath, csvContent);
+}
 
-    // Shuffle array to randomize assignments
-    function shuffle(array) {
-      for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
-      }
-      return array;
-    }
+function assignSecretSanta(santas, lastYearAssignments) {
+    let receivers = [...santas];
 
-    // Helper function to check if assignment is valid
-    function isValidAssignment(employee, candidate, lastYearMap) {
-      return (
-        employee.Employee_EmailID !== candidate.Employee_EmailID && // Can't assign themselves
-        lastYearMap.get(employee.Employee_EmailID) !== candidate.Employee_EmailID // Not the same as last year
-      );
-    }
+    // Utility function to shuffle an array
+    const shuffle = (array) => array.sort(() => Math.random() - 0.5);
 
-    // Assign Secret Santas
-    let secretSantaAssignments = [];
-    let unassigned = shuffle([...employees]); // Shuffle the employees
+    shuffle(receivers);
 
-    for (const employee of employees) {
-      let assigned = false;
-      for (let i = 0; i < unassigned.length; i++) {
-        const candidate = unassigned[i];
-        if (isValidAssignment(employee, candidate, lastYearMap)) {
-          // Valid assignment found
-          secretSantaAssignments.push({
-            Employee_Name: employee.Employee_Name,
-            Employee_EmailID: employee.Employee_EmailID,
-            Secret_Child_Name: candidate.Employee_Name,
-            Secret_Child_EmailID: candidate.Employee_EmailID,
-          });
-          unassigned.splice(i, 1); // Remove the assigned employee from the unassigned list
-          assigned = true;
-          break;
-        }
-      }
-
-      // Error handling in case no valid assignment is possible
-      if (!assigned) {
-        throw new Error(`No valid Secret Santa assignment possible for ${employee.Employee_Name}`);
-      }
-    }
-
-    // Output the results to a new CSV file
-    const output = secretSantaAssignments.map((row) => ({
-      Employee_Name: row.Employee_Name,
-      Employee_EmailID: row.Employee_EmailID,
-      Secret_Child_Name: row.Secret_Child_Name,
-      Secret_Child_EmailID: row.Secret_Child_EmailID,
+    let assignments = santas.map((santa, i) => ({
+        Employee_Name: santa.Employee_Name,
+        Employee_EmailID: santa.Employee_EmailID,
+        Secret_Child_Name: receivers[i].Employee_Name,
+        Secret_Child_EmailID: receivers[i].Employee_EmailID
     }));
 
-    const csvHeader = 'Employee_Name,Employee_EmailID,Secret_Child_Name,Secret_Child_EmailID\n';
-    const csvContent = csvHeader + output.map(row => `${row.Employee_Name},${row.Employee_EmailID},${row.Secret_Child_Name},${row.Secret_Child_EmailID}`).join('\n');
+    // Check conflicts
+    const hasConflict = assignments.some(pair =>
+        pair.Employee_Name === pair.Secret_Child_Name ||
+        lastYearAssignments.some(last => 
+            last.Employee_Name === pair.Employee_Name && last.Secret_Child_Name === pair.Secret_Child_Name
+        )
+    );
 
-    fs.writeFileSync('./Secret-Santa-Game-Result-2024.csv', csvContent);
-
-    console.log('Secret Santa assignments have been generated successfully!');
-
-  } catch (error) {
-    console.error('Error occurred:', error.message);
-  }
+    return hasConflict ? assignSecretSanta(santas, lastYearAssignments) : assignments; // Recursion instead of loop
 }
 
-// Start the Secret Santa assignment
-assignSecretSantas();
+
+async function main() {
+    try {
+        const employeesFilePath = path.join(__dirname, "Employee-List.csv");
+        const lastYearFilePath = path.join(__dirname, "Secret-Santa-Game-Result-2024.csv");
+        const outputFilePath = path.join(__dirname, "Secret-Santa-Game-Result-2025.csv");
+
+        const employees = await readCSV(employeesFilePath);
+        const lastYearAssignments = await readCSV(lastYearFilePath);
+
+        const assignments = assignSecretSanta(employees, lastYearAssignments);
+        writeCSV(outputFilePath, assignments);
+
+        console.log(`Secret Santa assignments saved to ${outputFilePath}`);
+    } catch (error) {
+        console.error("Error:", error.message);
+    }
+}
+
+// Run the program
+main();
